@@ -21,11 +21,14 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - run: dotnet --info
+      - run: echo "DOTNET_ROOT=$DOTNET_ROOT"
+      - run: echo "PATH=$PATH"
+      - run: dotnet --list-sdks
+      - run: dotnet --version
 
       - run: dotnet build -c Release
 
-      - run: ls -la bin/Release/net8.0/ || echo "No output"
+      - run: ls -la bin/Release/net8.0/ || echo "Not found"
 
       - run: dotnet pack -c Release -o ./nupkg --no-build
 
