@@ -21,7 +21,9 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - run: dotnet pack -c Release -o ./nupkg
+      - run: dotnet build -c Release
+
+      - run: dotnet pack -c Release -o ./nupkg --no-build
 
       - run: |
           dotnet nuget push ./nupkg/*.nupkg \
