@@ -10,6 +10,10 @@
     <Authors>sooncode</Authors>
     <Description>领域驱动设计基础设施框架 - 提供领域模型、事件溯源、仓储、Finder查询等能力</Description>
     <PackageTags>DDD;Domain-Driven-Design;EventSourcing;CQRS</PackageTags>
+    <PackageProjectUrl>https://github.com/soonboot/sooncode.domain.net</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/soonboot/sooncode.domain.net</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageOutputPath>$(SolutionDir)packages</PackageOutputPath>
   </PropertyGroup>
 
