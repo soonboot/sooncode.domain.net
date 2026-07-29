@@ -21,9 +21,13 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - run: dotnet restore
+      - run: dotnet --info
 
-      - run: dotnet pack -c Release -o ./nupkg
+      - run: dotnet build -c Release
+
+      - run: ls -la bin/Release/net8.0/ || echo "No output"
+
+      - run: dotnet pack -c Release -o ./nupkg --no-build
 
       - run: dotnet nuget push ./nupkg/*.nupkg \
               --api-key az \
