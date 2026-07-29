@@ -1,0 +1,29 @@
+name: Publish to NuGet
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Domain.Infrastructure.csproj'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - run: dotnet pack -c Release -o ./nupkg
+
+      - run: |
+          dotnet nuget push ./nupkg/*.nupkg \
+            --api-key az \
+            --source https://api.nuget.org/v3/index.json
