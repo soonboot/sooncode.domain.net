@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageId>Sooncode.Domain.Infrastructure</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>sooncode</Authors>
+    <Description>领域驱动设计基础设施框架 - 提供领域模型、事件溯源、仓储、Finder查询等能力</Description>
+    <PackageTags>DDD;Domain-Driven-Design;EventSourcing;CQRS</PackageTags>
+    <PackageOutputPath>$(SolutionDir)packages</PackageOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MongoDB.Driver" Version="3.7.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="packages\" />
+  </ItemGroup>
+
+</Project>
