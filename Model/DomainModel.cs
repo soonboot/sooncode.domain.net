@@ -11,13 +11,23 @@ namespace Domain.Infrastructure.Model;
 /// 聚合基类, 也是事件溯源模式的聚合基类
 /// </summary>
 /// <typeparam name="T">聚合类型</typeparam>
-public abstract class DomainModel<T> : Entity where T : DomainModel<T>
+public abstract class DomainModel<T> : Entity, IDomainModel where T : DomainModel<T>
 {
     [IgnoreField]
     protected List<DomainEvent> Events { get; set; }
-    public bool __stored__  = true;
-    private int __version__ =0;
-    public int __startVersion__  = 0;
+    public bool __stored__ = true;
+    private int __version__ = 0;
+    public int __startVersion__ = 0;
+
+    /// <inheritdoc/>
+    [IgnoreField]
+    public bool StoredFlag { get => __stored__; set => __stored__ = value; }
+
+    /// <inheritdoc/>
+    [IgnoreField]
+    public int StartVersion { get => __startVersion__; set => __startVersion__ = value; }
+    [IgnoreField]
+    private int _persistedEventCount;
 
     /// <summary>
     /// 构造器
@@ -95,7 +105,7 @@ public abstract class DomainModel<T> : Entity where T : DomainModel<T>
         }
         catch (TargetInvocationException ex)
         {
-            throw new DomainException($"执行相关对象的when方法时错误:{ex.InnerException?.Message}", innerException: ex.InnerException);
+            throw new DomainException($"执行相关对象的when方法时错误:{ex.InnerException?.Message}", innerException: (Exception?)ex.InnerException ?? ex);
         }
         catch (Exception ex)
         {
@@ -103,28 +113,44 @@ public abstract class DomainModel<T> : Entity where T : DomainModel<T>
         }
     }
 
+    /// <summary>
+    /// 查找事件处理方法 <c>when</c>（大小写不敏感：兼容 Java 小写 <c>when</c> 与 .NET 规范大写 <c>When</c>）。
+    /// 同一聚合存在多个重载时选择参数类型最具体（继承距离最近）者；找不到返回 null 由调用方回退投影。
+    /// </summary>
     private static MethodInfo? FindWhenMethod(Type aggregateType, Type eventType)
     {
-        var clz = aggregateType;
-
-        while (clz != null && clz != typeof(DomainModel<>))
+        ArgumentNullException.ThrowIfNull(aggregateType);
+        ArgumentNullException.ThrowIfNull(eventType);
+        MethodInfo? best = null;
+        var bestDepth = int.MaxValue;
+        for (var clz = aggregateType; clz is not null && clz != typeof(object); clz = clz.BaseType)
         {
-            var whenMethod = clz.GetMethods(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance)
-                .FirstOrDefault(m => m.Name == "when" && m.GetParameters().Length == 1);
-
-            if (whenMethod != null)
+            if (clz.IsGenericType && clz.GetGenericTypeDefinition() == typeof(DomainModel<>)) break;
+            foreach (var m in clz.GetMethods(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
             {
-                var paramType = whenMethod.GetParameters()[0].ParameterType;
-                if (paramType.IsAssignableFrom(eventType))
+                if (!string.Equals(m.Name, "when", StringComparison.OrdinalIgnoreCase)) continue;
+                var ps = m.GetParameters();
+                if (ps.Length != 1) continue;
+                var paramType = ps[0].ParameterType;
+                if (!paramType.IsAssignableFrom(eventType)) continue;
+                var depth = InheritanceDistance(eventType, paramType);
+                if (depth < bestDepth)
                 {
-                    return whenMethod;
+                    bestDepth = depth;
+                    best = m;
+                    if (depth == 0) return best;
                 }
             }
-
-            clz = clz.BaseType;
         }
 
-        return null;
+        return best;
+    }
+
+    private static int InheritanceDistance(Type derived, Type @base)
+    {
+        var depth = 0;
+        for (var c = derived; c is not null && c != @base; c = c.BaseType) depth++;
+        return depth;
     }
 
     /// <summary>
@@ -197,6 +223,15 @@ public abstract class DomainModel<T> : Entity where T : DomainModel<T>
 
         var eventBootAttr = @event.GetType().GetCustomAttribute<EventBootAttribute>();
         var monitor = Monitor.Monitor.Instance;
+        // 与 Java 版 causes 对齐：无 Monitor 时按无仓储维度捕获到 Batcher；
+        // 有 Monitor 时走 StoreNotice（内部按仓储维度捕获 + 会话延期 + 单条落库），此处不提前返回。
+        if (monitor is null)
+        {
+            var ft0 = eventBootAttr?.StoreFunc ?? FuncType.none;
+            if (ft0 is FuncType.add or FuncType.modify or FuncType.delete)
+                Batcher.BatcherCapture.TryCapture(this, ft0);
+        }
+
         if (eventBootAttr != null && monitor != null)
         {
             var ft = eventBootAttr.StoreFunc;
@@ -209,7 +244,11 @@ public abstract class DomainModel<T> : Entity where T : DomainModel<T>
 
         if (monitor != null)
         {
-            monitor.Notice<T>(@event, this);
+            // 批量作用域内延迟到 Execute/Commit 后再通知，与 Java 版 Batcher.current().deferEventNotice 对齐。
+            if (Batcher.BatcherCapture.HasActiveScope)
+                Batcher.BatcherCapture.TryDeferEventNotice(@event, this);
+            else
+                monitor.Notice<T>(@event, this);
         }
     }
 
@@ -326,5 +365,56 @@ public abstract class DomainModel<T> : Entity where T : DomainModel<T>
     public IReadOnlyList<DomainEvent> GetEvents()
     {
         return Events.AsReadOnly();
+    }
+
+    /// <summary>当前尚未成功持久化的事件（防御性副本）。与 Java 版 <c>getPendingEvents</c> 对齐。</summary>
+    public IReadOnlyList<DomainEvent> GetPendingEvents()
+    {
+        var start = Math.Min(_persistedEventCount, Events.Count);
+        return Events.Skip(start).ToList().AsReadOnly();
+    }
+
+    /// <summary>在最终状态确定后为本次待持久化事件生成审计快照。与 Java 版 <c>preparePendingEventSnapshots</c> 对齐。</summary>
+    public IReadOnlyList<DomainEvent> PreparePendingEventSnapshots()
+    {
+        var pending = GetPendingEvents();
+        foreach (var e in pending)
+            e?.ConvertModelSnapshot(this);
+        return pending;
+    }
+
+    /// <summary>是否已全部落库（无待持久化事件）。与 Java 版 <c>isStored</c> 对齐。</summary>
+    public bool IsStored() => __stored__ && _persistedEventCount >= Events.Count;
+
+    /// <summary>仅在对应事件真实写入成功后由持久层调用。与 Java 版 <c>markStored</c> 对齐。</summary>
+    public void MarkStored()
+    {
+        _persistedEventCount = Events.Count;
+        __stored__ = true;
+    }
+
+    /// <summary>
+    /// 仅在对应事件真正写入成功后推进持久化边界（必须为待持久化前缀）。与 Java 版 <c>markEventsPersisted</c> 对齐。
+    /// 写入失败时不应调用，重试仍可拿到完整待持久化事件。
+    /// </summary>
+    public void MarkEventsPersisted(IReadOnlyList<DomainEvent>? persistedEvents)
+    {
+        if (persistedEvents is null || persistedEvents.Count == 0)
+        {
+            __stored__ = _persistedEventCount >= Events.Count;
+            return;
+        }
+
+        var start = _persistedEventCount;
+        if (start + persistedEvents.Count > Events.Count)
+            throw new DomainException("持久化事件超出实体事件列表范围");
+        for (var i = 0; i < persistedEvents.Count; i++)
+        {
+            if (!ReferenceEquals(Events[start + i], persistedEvents[i]))
+                throw new DomainException("持久化事件不是实体待持久化事件的连续前缀");
+        }
+
+        _persistedEventCount += persistedEvents.Count;
+        __stored__ = _persistedEventCount >= Events.Count;
     }
 }

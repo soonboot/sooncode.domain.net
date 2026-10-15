@@ -9,8 +9,11 @@ public abstract class DomainEvent : IEquatable<DomainEvent>
 {
     private static readonly ConcurrentDictionary<Type, Dictionary<string, PropertyInfo>> PropertiesCache = new();
 
-    public string Id { get; set; }
+    public string Id { get; set; } = string.Empty;
     public IDictionary<string, object> DynamicParams { get; set; } = new Dictionary<string, object>();
+
+    /// <summary>实体审计快照（最终状态确定后由持久层生成，不参与回写与重放）。与 Java 版 <c>DomainEvent.modelSnapshot</c> 对齐。</summary>
+    public IDictionary<string, object?> ModelSnapshot { get; private set; } = new Dictionary<string, object?>();
 
     private Dictionary<string, PropertyInfo> Properties => PropertiesCache.GetOrAdd(GetType(), type =>
     {
@@ -216,6 +219,13 @@ public abstract class DomainEvent : IEquatable<DomainEvent>
 
         DynamicParams.TryGetValue(fieldName, out var value);
         return value;
+    }
+
+    /// <summary>为本次待写入事件生成审计快照（不改变事件定义参数）。与 Java 版 <c>convertModelSnapshot</c> 对齐。</summary>
+    public void ConvertModelSnapshot(Entity obj)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        ModelSnapshot = Utils.EntityConvert.EntityToMap(obj);
     }
 
     public bool HasField(string fieldName)

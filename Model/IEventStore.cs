@@ -8,6 +8,8 @@ public interface IEventStore
     void AppendEventToStream(string streamName, IEnumerable<DomainEvent> domainEvents, int? expectedVersion, Type cla);
     void AppendEventToStream(string streamName, IEnumerable<DomainEvent> domainEvents, Type cla);
     void Invalid(string streamName, IEnumerable<DomainEvent> domainEvents, int? expectedVersion, Type cla);
+    /// <summary>重新激活已失效的流（回收站恢复时使用）。</summary>
+    void Reactivate(string streamName);
     List<DomainEvent>? GetStream(string streamName, int fromVersion, int toVersion);
     Finder.Page<EventWrapper> GetStream(string modelType, string eventType, string creater, int pageSize, int pageIndex);
     void SaveSnapshot(string id, Entity snapshot);

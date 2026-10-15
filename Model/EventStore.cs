@@ -66,6 +66,14 @@ public class EventStore : IEventStore
         }
     }
 
+    public void Reactivate(string streamName)
+    {
+        var eventStream = _repository?.LoadMetadata(streamName);
+        if (eventStream is null) throw new DomainException("没有找到元数据:" + streamName);
+        eventStream.IsInvalid = 0;
+        _repository?.UpdateMetadata(eventStream);
+    }
+
     public List<DomainEvent>? GetStream(string streamName, int fromVersion, int toVersion)
     {
         var eventWrappers = _repository?.GetStream(streamName, fromVersion, toVersion);
@@ -127,7 +135,7 @@ public class EventStore : IEventStore
         if (lastUpdatedVersion != expectedVersion)
         {
             string error = string.Format("预期版本号: {0}。 找到的版本号: {1}", expectedVersion, lastUpdatedVersion);
-            throw new DomainException(error);
+            throw new CheckForConcurrencyException(error);
         }
     }
     private string GetCollectionName(Type cType)

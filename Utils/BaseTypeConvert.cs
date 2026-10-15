@@ -60,6 +60,29 @@ public static class BaseTypeConvert
             return o;
     }
     
+    /// <summary>是否为单值类型（对齐 Java 版 isSingleValueType）。</summary>
+    public static bool IsSingleValueType(Type type)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+        return type == typeof(string) || type.IsPrimitive || type.IsEnum || type.IsValueType;
+    }
+
+    /// <summary>通用单值转换（对齐 Java 版 convertValue）。</summary>
+    public static object? ConvertValue(object value, Type targetType)
+    {
+        ArgumentNullException.ThrowIfNull(targetType);
+        if (value is null) return null;
+        if (targetType.IsInstanceOfType(value)) return value;
+        try
+        {
+            if (targetType == typeof(string)) return value.ToString();
+            if (value is IConvertible) return Convert.ChangeType(value, targetType);
+            if (value is string s) return ConvertTo(s, targetType);
+        }
+        catch { }
+        return value;
+    }
+
     public static object? Def(Type cla)
     {
         if (DefMap.ContainsKey(cla))
